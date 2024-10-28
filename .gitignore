@@ -1,0 +1,7 @@
+
+*/**/.terraform/
+
+.aws-profile
+
+terraform.tfvars
+terraform.tfstate
