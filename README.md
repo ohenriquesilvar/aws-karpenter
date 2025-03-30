@@ -118,6 +118,100 @@ kubectl get nodes
 kubectl get pods -n kube-system | grep karpenter
 ```
 
+## Testando o Scaling do Karpenter
+
+Para testar o autoscaling do Karpenter, você pode seguir estes passos:
+
+1. Primeiro, configure o kubeconfig para acessar o cluster:
+
+```bash
+aws eks update-kubeconfig --name <cluster-name> --region <region>
+```
+
+2. Verifique se o Karpenter está funcionando corretamente:
+
+```bash
+kubectl get pods -n kube-system | grep karpenter
+```
+
+3. O deployment de teste `inflate` já está criado no cluster. Para testar o scaling, aumente o número de réplicas:
+
+```bash
+kubectl scale deployment inflate --replicas=5
+```
+
+4. Monitore a criação dos nós:
+
+```bash
+kubectl get nodes -w
+```
+
+5. Monitore os pods:
+
+```bash
+kubectl get pods -w
+```
+
+6. Para ver os detalhes do scaling do Karpenter:
+
+```bash
+kubectl logs -f -n kube-system -l app.kubernetes.io/name=karpenter
+```
+
+7. Para limpar o teste, volte o número de réplicas para 0:
+
+```bash
+kubectl scale deployment inflate --replicas=0
+```
+
+### Verificando o Estado do Cluster
+
+Para verificar o estado geral do cluster e dos nós:
+
+```bash
+# Ver todos os nós
+kubectl get nodes
+
+# Ver detalhes dos nós
+kubectl describe nodes
+
+# Ver pods em todos os namespaces
+kubectl get pods -A
+
+# Ver logs do Karpenter
+kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter
+```
+
+### Troubleshooting
+
+Se encontrar problemas:
+
+1. Verifique os logs do Karpenter:
+
+```bash
+kubectl logs -n kube-system -l app.kubernetes.io/name=karpenter
+```
+
+2. Verifique os eventos do cluster:
+
+```bash
+kubectl get events --sort-by='.lastTimestamp'
+```
+
+3. Verifique o estado do NodePool:
+
+```bash
+kubectl get nodepool
+kubectl describe nodepool
+```
+
+4. Verifique o estado do EC2NodeClass:
+
+```bash
+kubectl get ec2nodeclass
+kubectl describe ec2nodeclass
+```
+
 ## Limpeza
 
 Para remover a infraestrutura:
