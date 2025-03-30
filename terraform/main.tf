@@ -41,8 +41,8 @@ provider "kubectl" {
 
 terraform {
   backend "s3" {
-    bucket = "${var.aws_account_id}-bucket-state-file-karpenter"
-    region = var.region
+    bucket = "890243722501-state-file-karpenter"
+    region = "us-east-1"
     key    = "karpenter.tfstate"
   }
 
