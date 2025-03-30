@@ -7,7 +7,7 @@ provider "aws" {
 }
 
 provider "aws" {
-  region = "us-east-1"
+  region = var.region
   alias  = "virginia"
 }
 
@@ -41,9 +41,9 @@ provider "kubectl" {
 
 terraform {
   backend "s3" {
-    bucket = "xxxxxxxxxxx-bucket-state-file-karpenter"
-    region = "us-east-1"
-    key    = "terraform.tfstate"
+    bucket = "${var.aws_account_id}-bucket-state-file-karpenter"
+    region = var.region
+    key    = "karpenter.tfstate"
   }
 
   required_providers {
@@ -65,24 +65,44 @@ data "aws_ecrpublic_authorization_token" "token" {
   provider = aws.virginia
 }
 
+data "aws_availability_zones" "available" {}
+
+locals {
+  name   = var.cluster_name
+  region = var.region
+
+  vpc_cidr = var.vpc_cidr
+  azs      = slice(data.aws_availability_zones.available.names, 0, 3)
+
+  tags = merge(
+    {
+      Name        = local.name
+      Environment = var.environment
+      Terraform   = "true"
+      Project     = "karpenter"
+    },
+    var.tags
+  )
+}
+
+
 ###############################################################################
 # VPC
 ###############################################################################
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "5.13.0"
+  version = "~> 5.0"
 
-  name = "${var.cluster_name}-vpc"
-  cidr = "10.0.0.0/16"
+  name = local.name
+  cidr = local.vpc_cidr
 
-  azs             = ["${var.region}a", "${var.region}b", "${var.region}c"]
-  private_subnets = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
-  public_subnets  = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
-  intra_subnets   = ["10.0.104.0/24", "10.0.105.0/24", "10.0.106.0/24"]
+  azs             = local.azs
+  private_subnets = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 4, k)]
+  public_subnets  = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 48)]
+  intra_subnets   = [for k, v in local.azs : cidrsubnet(local.vpc_cidr, 8, k + 52)]
 
-  enable_nat_gateway     = true
-  single_nat_gateway     = true
-  one_nat_gateway_per_az = false
+  enable_nat_gateway = true
+  single_nat_gateway = true
 
   public_subnet_tags = {
     "kubernetes.io/role/elb" = 1
@@ -91,8 +111,10 @@ module "vpc" {
   private_subnet_tags = {
     "kubernetes.io/role/internal-elb" = 1
     # Tags subnets for Karpenter auto-discovery
-    "karpenter.sh/discovery" = var.cluster_name
+    "karpenter.sh/discovery" = local.name
   }
+
+  tags = local.tags
 }
 
 ###############################################################################
@@ -103,7 +125,7 @@ module "eks" {
   version = "20.24.0"
 
   cluster_name    = var.cluster_name
-  cluster_version = "1.30"
+  cluster_version = var.cluster_version
 
   cluster_endpoint_public_access = true
 
@@ -125,7 +147,7 @@ module "eks" {
       instance_types = ["m5.large"]
 
       min_size     = 2
-      max_size     = 10
+      max_size     = 3
       desired_size = 2
 
       taints = {
@@ -144,12 +166,12 @@ module "eks" {
   # To add the current caller identity as an administrator
   enable_cluster_creator_admin_permissions = true
 
-  node_security_group_tags = {
+  node_security_group_tags = merge(local.tags, {
     # NOTE - if creating multiple security groups with this module, only tag the
     # security group that Karpenter should utilize with the following tag
     # (i.e. - at most, only one security group should have this tag in your account)
-    "karpenter.sh/discovery" = var.cluster_name
-  }
+    "karpenter.sh/discovery" = local.name
+  })
 }
 
 ###############################################################################
@@ -186,7 +208,7 @@ resource "helm_release" "karpenter" {
   repository_password = data.aws_ecrpublic_authorization_token.token.password
   chart               = "karpenter"
   version             = "1.0.0"
-  wait                = false
+  wait                = true
 
   values = [
     <<-EOT
@@ -241,10 +263,10 @@ resource "kubectl_manifest" "karpenter_node_pool" {
           requirements:
             - key: "karpenter.k8s.aws/instance-category"
               operator: In
-              values: ["c", "m", "r"]
+              values: ${jsonencode(var.instance_categories)}
             - key: "karpenter.k8s.aws/instance-cpu"
               operator: In
-              values: ["4", "8", "16", "32"]
+              values: ${jsonencode(var.instance_cpu_values)}
             - key: "karpenter.k8s.aws/instance-hypervisor"
               operator: In
               values: ["nitro"]
@@ -252,7 +274,7 @@ resource "kubectl_manifest" "karpenter_node_pool" {
               operator: Gt
               values: ["2"]
       limits:
-        cpu: 2000
+        cpu: ${var.node_pool_cpu_limit}
       disruption:
         consolidationPolicy: WhenEmpty
         consolidateAfter: 30s
