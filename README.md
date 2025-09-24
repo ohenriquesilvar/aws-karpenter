@@ -25,7 +25,7 @@ O projeto implementa:
 1. Clone o repositório:
 
 ```bash
-git clone https://github.com/ohenriquesilvar/cluster-autoscaler
+git clone https://github.com/ohenriquesilvar/aws-karpenter
 cd aws-karpenter
 ```
 
