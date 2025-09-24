@@ -146,9 +146,9 @@ module "eks" {
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = ["m5.large"]
 
-      min_size     = 2
-      max_size     = 3
-      desired_size = 2
+      min_size     = 1
+      max_size     = 6
+      desired_size = 1
 
       taints = {
         # This Taint aims to keep just EKS Addons and Karpenter running on this MNG
